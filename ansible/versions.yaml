@@ -1,0 +1,3 @@
+---
+kube_version: "1.23.6"
+#Kube version if you're on the bleeding edge you can have a bad time

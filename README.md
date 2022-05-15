@@ -1,19 +1,33 @@
-# Deploy a K8 cluster in Proxmox using Terraform and Ansible
+# Deploy a K8 cluster in Proxmox Cluster using Terraform and Ansible
 Running a kube cluster in any public cloud provider is a costly business.
 There are many ways to deploy a local cluster with virtualbox, kind etc.
 However I wanted to use Proxmox with my home server and I could not find any complete example of deploying a fully automated cluster using Terraform and Ansible.
-So I created this repo.
-This is not production grade at all but perfect for running a 3 node cluster at home.
+# Retooling 
+I have a 5 node Proxmox cluster and the original script is not really designed with that use case in mind.
+Also I needed to be able to select the Kubernetes version which can be found in ansible/versions.yaml
+Changed the up the tooling a bit to no longer rely on the very broken as of writing cicustom var in the proxmox provider.
 
-
-# Pre-requisits
+# Pre-requisites
 - Proxmox with API token to create VMs
 - VM template (follow steps below to create a template)
 - CIDR range to setup static IPs for the cluster nodes. Below are the default IPs.
+- Proxmox Cluster
+- SSH Keys generated on the deployer machine
 ```
-master  192.168.193.20
-worker0 192.168.193.30
-worker1 192.168.193.31
+[workers]
+
+k8s-worker-1.worker.local ansible_host=10.0.120.71
+
+k8s-worker-2.worker.local ansible_host=10.0.120.72
+
+k8s-worker-3.worker.local ansible_host=10.0.120.73
+
+k8s-worker-4.worker.local ansible_host=10.0.120.74
+
+[masters]
+
+k8s-master-1.master.local ansible_host=10.0.120.80
+
 ```
 - Terraform and Ansible
 
@@ -21,6 +35,10 @@ worker1 192.168.193.31
 - Make sure you have all the pre-requisites
 - Clone this repo
 - Export PM_API_TOKEN_ID and PM_API_TOKEN_SECRET
+```
+export PM_API_TOKEN_ID="root@pam"'!'"token_name"
+export PM_API_TOKEN_SECRET="something-7eeb-foof-9a68-probablyakey"
+```
 - Run Terraform init from the root folder
 - Run Terraform apply
 
@@ -30,40 +48,27 @@ worker1 192.168.193.31
 - Use MetalLB https://metallb.universe.tf/installation/ to play with Ingress and Ingress Controller.
 - Use https://github.com/kubernetes-sigs/metrics-server metrics server, but make sure to update the deployment with ```--kubelet-insecure-tls``` arg to get it running. 
 ## How to create a VM template in Proxmox
+## This is needed on every host that is going to deploy Kube workers.
 ```
-# download the cloud image 
-cd /var/lib/vz/template/iso
-wget https://cloud-images.ubuntu.com/bionic/current/bionic-server-cloudimg-amd64.img
-
-# install libguestfs-tools to directly install qemu-guest-agent into the iso
-apt-get install libguestfs-tools
-
-# install qemu-guest-agent
-virt-customize -a focal-server-cloudimg-amd64.img --install qemu-guest-agent
-
-# create a new VM
-qm create 100 --name "ubuntu-2004-cloudinit-template" --memory 4096 --cores 2 --net0 virtio,bridge=vmbr0
-
-# import the downloaded disk to local-lvm storage
-qm importdisk 100 focal-server-cloudimg-amd64.img local-lvm
-
-# finally attach the new disk to the VM as scsi drive
-qm set 100 --scsihw virtio-scsi-pci --scsi0 local-lvm:vm-100-disk-0
-
-# configure a CD-ROM drive, which will be used to pass the Cloud-Init data to the VM
-qm set 100 --ide2 local-lvm:cloudinit
-
-# to be able to boot directly from the Cloud-Init image, set the bootdisk parameter to scsi0
-qm set 100 --boot c --bootdisk scsi0
-
-# configure a serial console and use it as a display
-qm set 100 --serial0 socket --vga serial0
-
-# enable the agent
-qm set 100 –-agent 1
-
-# convert the VM into a template
-qm template 100
+mkdir -p /var/lib/vz/snippets/;
+chmod 755 /var/lib/vz/snippets/;
+export QMID=8001;
+cd /var/lib/vz/template/iso; wget https://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img;
+# Download Ubuntu Focal
+qm create $QMID --name "ubuntu-2004-cloudinit-template" --memory 4096 --cores 2 --net0 virtio,bridge=vmbr0;
+# Create VM using image
+qm importdisk $QMID focal-server-cloudimg-amd64.img local-lvm;
+# Import image into VM
+qm set $QMID --scsihw virtio-scsi-pci --scsi0 local-lvm:vm-$QMID-disk-0;
+# Set boot disk as disk
+qm set $QMID --ide2 local-lvm:cloudinit;
+# Add cloudinit
+qm set $QMID --boot c --bootdisk scsi0;
+# Set bootdisk
+qm set $QMID --serial0 socket --vga serial0;
+# Enable serial and serial
+qm template $QMID
+# Convert to template
 ```
 
 #### Reference: #####

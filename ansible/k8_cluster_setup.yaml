@@ -1,17 +1,15 @@
 ---
 - hosts: masters,workers
-  remote_user: jay
+  remote_user: bootstrap
   become: yes
   become_user: root
   become_method: sudo
   gather_facts: yes
-
   tasks:
-    - name: update hosts files in each node, need a better way of doing this
-      shell: |
-        echo "192.168.193.20  master.example.com  master" >> /etc/hosts
-        echo "192.168.193.30  worker0.example.com  worker-0" >> /etc/hosts
-        echo "192.168.193.31  worker1.example.com  worker-1" >> /etc/hosts
+    - include_vars: versions.yaml
+
+    - name: Update hosts files in each node
+      script: ./generated_scripts/hostfile_injector.sh
 
     - name: disable firewall to make it easy for now
       shell: sudo ufw disable
@@ -95,9 +93,9 @@
     - name: install kubelet, kubeadm and kubectl only when the apt process isn't locked
       apt:
         name:
-          - kubelet
-          - kubeadm
-          - kubectl
+          - kubelet={{kube_version}}-00
+          - kubeadm={{kube_version}}-00
+          - kubectl={{kube_version}}-00
         state: present
       register: apt_action
       retries: 100
@@ -106,16 +104,17 @@
     - name: pin kubelet, kubeadm and kubectl versions
       shell: sudo apt-mark hold kubelet kubeadm kubectl
 
+
+
 - hosts: masters
   become: yes
-
   tasks:
     - name: initialise cluster with kubeadm in master node
-      shell: sudo kubeadm init
+      shell: "sudo kubeadm init --kubernetes-version v{{kube_version}}"
 
     - name: setup kubectl access as normal user
       become: yes
-      become_user: jay
+      become_user: bootstrap
       shell: |
         mkdir -p $HOME/.kube
         sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
@@ -123,12 +122,12 @@
 
     - name: setup CNI, giving Weave Net a go
       become: yes
-      become_user: jay
+      become_user: bootstrap
       shell: kubectl apply -f "https://cloud.weave.works/k8s/net?k8s-version=$(kubectl version | base64 | tr -d '\n')"
 
     - name: generate the token for joining the worker nodes
       become: yes
-      become_user: jay
+      become_user: bootstrap
       shell: kubeadm token create  --print-join-command
       register: kubernetes_join_command
 
@@ -159,6 +158,6 @@
 
     - name: join the Worker nodes to the cluster.
       become: yes
-      become_user: jay
+      become_user: bootstrap
       shell: sudo sh /tmp/kubernetes_join_command.sh
       register: joined_or_not
